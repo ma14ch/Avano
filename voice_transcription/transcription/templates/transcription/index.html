@@ -1,0 +1,21 @@
+<!-- transcription/templates/transcription/index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Voice Transcription</title>
+</head>
+<body>
+    <h1>Voice Transcription</h1>
+    {% if error %}
+    <p style="color:red;">{{ error }}</p>
+    {% endif %}
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <label for="audio_file">Upload audio file:</label>
+        <input type="file" name="audio_file" id="audio_file" required><br><br>
+        <label for="num_speakers">Number of Speakers (optional):</label>
+        <input type="number" name="num_speakers" id="num_speakers" min="1"><br><br>
+        <button type="submit">Transcribe</button>
+    </form>
+</body>
+</html>
