@@ -4,6 +4,8 @@
 This repository is built for multi-user speech-to-text transcription in a single audio session.  
 این مخزن برای پیاده‌سازی تبدیل گفتار به متن در یک جلسه صوتی با چند کاربر به‌صورت همزمان طراحی شده است.
 
+![ChatGPT Image May 16, 2025, 05_55_07 PM](https://github.com/user-attachments/assets/bba046c7-12fe-45ad-9244-741632a07b1a)
+
 ---
 
 ## API Usage Examples with `curl`  
