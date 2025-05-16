@@ -1,0 +1,10 @@
+fastapi>=0.95.0
+uvicorn>=0.22.0
+python-multipart>=0.0.6
+librosa>=0.10.0
+torch>=2.0.0
+transformers>=4.30.0
+pyannote.audio>=2.1.1
+pydub>=0.25.1
+python-dotenv>=1.0.0
+pyyaml>=6.0
