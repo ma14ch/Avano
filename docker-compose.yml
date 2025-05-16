@@ -1,0 +1,24 @@
+version: '3'
+
+services:
+  ai-tts:
+    build: .
+    container_name: ai-ASR
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    ports:
+      - "5016:5016"
+    volumes:
+      - ./src:/app/src
+      - ./models:/app/models
+    networks:
+      - ai-default
+
+networks:
+  ai-default:
+    external: true
