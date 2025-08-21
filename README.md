@@ -1,8 +1,8 @@
 # Avano - Persian Multi-Speaker Voice Transcription Service
 
-# Avano is a powerful Persian speech-to-text service designed for multi-speaker transcription in a single audio session.  
+## Avano is a powerful Persian speech-to-text service designed for multi-speaker transcription in a single audio session.  
 
-# <div dir="rtl">آوانو یک سرویس قدرتمند تبدیل صوت به متن فارسی است که برای پیاده‌سازی متن گفتارِ چند سخنران در یک جلسه صوتی طراحی شده است.</div>
+## <div dir="rtl">آوانو یک سرویس قدرتمند تبدیل صوت به متن فارسی است که برای پیاده‌سازی متن گفتارِ چند سخنران در یک جلسه صوتی طراحی شده است.</div>
 
 <img width="1536" height="1024" alt="Avano Demo Image" src="https://github.com/user-attachments/assets/f0b04dc5-42b7-47af-a895-504fc0c35062" />
 
