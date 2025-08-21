@@ -15,6 +15,57 @@ Avano uses the state-of-the-art [vhdm/whisper-large-fa-v1](https://huggingface.c
 - 📊 14.07% Word Error Rate (WER)
 - 💪 Optimized for Persian voice transcription
 
+## Installation Guide
+
+### Prerequisites
+- Python 3.10 or higher
+- CUDA-compatible GPU (recommended)
+- Docker and Docker Compose (optional)
+
+### Option 1: Using Docker (Recommended)
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/avano.git
+cd avano
+```
+
+2. Start the service using Docker Compose:
+```bash
+docker-compose up --build
+```
+
+The service will be available at `http://localhost:5016`.
+
+### Option 2: Manual Installation
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/avano.git
+cd avano
+```
+
+2. Create and activate a virtual environment:
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows use: venv\Scripts\activate
+```
+
+3. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+4. Run the service:
+```bash
+python src/main.py
+```
+
+The service will be available at `http://localhost:5016`.
+
+### Environment Configuration
+- The service automatically detects GPU availability
+- Default port is 5016 (can be modified in `main.py`)
+- Model files are stored in the `models/` directory
+
 ## API Usage Examples with `curl`  
 ## نمونه‌هایی از استفاده از API با `curl`
 
