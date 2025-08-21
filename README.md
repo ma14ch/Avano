@@ -1,12 +1,19 @@
+# Avano - Persian Multi-Speaker Voice Transcription Service
 
-# VoiceTranscription-whisper3
-
-This repository is built for multi-user speech-to-text transcription in a single audio session.  
-این مخزن برای پیاده‌سازی تبدیل گفتار به متن در یک جلسه صوتی با چند کاربر به‌صورت همزمان طراحی شده است.
+Avano is a powerful Persian speech-to-text service designed for multi-speaker transcription in a single audio session.  
+آوانو یک سرویس قدرتمند تبدیل گفتار به متن فارسی است که برای پیاده‌سازی ترنویسی چند کاربر در یک جلسه صوتی طراحی شده است.
 
 ![ChatGPT Image May 16, 2025, 05_55_07 PM](https://github.com/user-attachments/assets/bba046c7-12fe-45ad-9244-741632a07b1a)
 
----
+## Model Information
+
+Avano uses the state-of-the-art [vhdm/whisper-large-fa-v1](https://huggingface.co/vhdm/whisper-large-fa-v1) model, which is specifically fine-tuned for Persian speech recognition. The model achieves a Word Error Rate (WER) of 14.07% on clean Persian speech data.
+
+### Key Features of the Model
+- 🎯 Fine-tuned on high-quality Persian speech data
+- 🚀 Based on OpenAI's Whisper Large V3 Turbo architecture
+- 📊 14.07% Word Error Rate (WER)
+- 💪 Optimized for Persian voice transcription
 
 ## API Usage Examples with `curl`  
 ## نمونه‌هایی از استفاده از API با `curl`
@@ -23,9 +30,8 @@ curl -X GET http://localhost:5016/
 
 ---
 
-### Speech-to-Text Transcription with Diarization
-
-### تبدیل گفتار به متن همراه با شناسایی گویندگان (Diarization)
+### Speech-to-Text Transcription with Speaker Diarization
+### تبدیل گفتار به متن همراه با تشخیص گوینده
 
 Send an audio file for transcription:
 برای ارسال یک فایل صوتی جهت تبدیل به متن:
@@ -37,19 +43,17 @@ curl -X POST http://localhost:5016/api/inference/ \
 ```
 
 #### Parameters
-
 #### پارامترها
 
-* `audio_file`: The audio file to transcribe (required)
+* `audio_file`: The audio file to transcribe (required)  
   فایل صوتی برای تبدیل به متن (اجباری)
 
-* `num_speakers`: The number of speakers to identify in the audio (optional)
-  تعداد گویندگان موجود در فایل صوتی (اختیاری)
+* `num_speakers`: Number of speakers to identify (optional)  
+  تعداد گویندگان برای تشخیص (اختیاری)
 
 ---
 
 ### Check Model Status
-
 ### بررسی وضعیت مدل‌ها
 
 Check if the models are loaded correctly:
@@ -62,30 +66,10 @@ curl -X GET http://localhost:5016/debug/models
 ---
 
 ### Response Format
+### قالب پاسخ
 
-### قالب پاسخ API
-
-The API will return a JSON response with the transcribed segments:
-پاسخ API به صورت JSON خواهد بود و شامل بخش‌های مختلف تبدیل‌شده به متن است:
-
-```json
-{
-  "segments": [
-    {
-      "speaker": "SPEAKER_0",
-      "start": 0.5,
-      "end": 5.2,
-      "transcription": "Transcribed text for speaker 0"
-    },
-    {
-      "speaker": "SPEAKER_1",
-      "start": 5.8,
-      "end": 10.3,
-      "transcription": "Transcribed text for speaker 1"
-    }
-  ]
-}
-```
+The API returns a JSON response with transcribed segments:
+API پاسخی در قالب JSON با بخش‌های ترنویسی شده برمی‌گرداند:
 
 ```json
 {
@@ -94,16 +78,26 @@ The API will return a JSON response with the transcribed segments:
       "speaker": "SPEAKER_0",
       "start": 0.5,
       "end": 5.2,
-      "transcription": "متن تبدیل‌شده برای گوینده ۰"
+      "transcription": "متن تبدیل‌شده برای گوینده اول"
     },
     {
       "speaker": "SPEAKER_1",
       "start": 5.8,
       "end": 10.3,
-      "transcription": "متن تبدیل‌شده برای گوینده ۱"
+      "transcription": "متن تبدیل‌شده برای گوینده دوم"
     }
   ]
 }
 ```
+
+## Model Limitations
+- Optimized for clean audio quality
+- Not designed for real-time streaming ASR
+- May occasionally produce hallucinations (a common limitation in Whisper models)
+- Best performance on standard Persian speech, may have reduced accuracy with heavy accents or dialects
+
+## License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
 
 
