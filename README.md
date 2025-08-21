@@ -1,9 +1,10 @@
 # Avano - Persian Multi-Speaker Voice Transcription Service
 
-Avano is a powerful Persian speech-to-text service designed for multi-speaker transcription in a single audio session.  
-آوانو یک سرویس قدرتمند تبدیل گفتار به متن فارسی است که برای پیاده‌سازی ترنویسی چند کاربر در یک جلسه صوتی طراحی شده است.
+# Avano is a powerful Persian speech-to-text service designed for multi-speaker transcription in a single audio session.  
 
-<img width="1536" height="1024" alt="ChatGPT Image Aug 22, 2025, 01_44_47 AM" src="https://github.com/user-attachments/assets/f0b04dc5-42b7-47af-a895-504fc0c35062" />
+# <div dir="rtl">آوانو یک سرویس قدرتمند تبدیل صوت به متن فارسی است که برای پیاده‌سازی متن گفتارِ چند سخنران در یک جلسه صوتی طراحی شده است.</div>
+
+<img width="1536" height="1024" alt="Avano Demo Image src="https://github.com/user-attachments/assets/f0b04dc5-42b7-47af-a895-504fc0c35062" />
 
 ## Model Information
 
@@ -67,13 +68,10 @@ The service will be available at `http://localhost:5016`.
 - Model files are stored in the `models/` directory
 
 ## API Usage Examples with `curl`  
-## نمونه‌هایی از استفاده از API با `curl`
 
 ### Basic API Status Check  
-### بررسی وضعیت پایه API
 
 Check if the API is running:  
-برای بررسی اینکه آیا API در حال اجرا است:
 
 ```bash
 curl -X GET http://localhost:5016/
@@ -82,10 +80,8 @@ curl -X GET http://localhost:5016/
 ---
 
 ### Speech-to-Text Transcription with Speaker Diarization
-### تبدیل گفتار به متن همراه با تشخیص گوینده
 
 Send an audio file for transcription:
-برای ارسال یک فایل صوتی جهت تبدیل به متن:
 
 ```bash
 curl -X POST http://localhost:5016/api/inference/ \
@@ -94,7 +90,6 @@ curl -X POST http://localhost:5016/api/inference/ \
 ```
 
 #### Parameters
-#### پارامترها
 
 * `audio_file`: The audio file to transcribe (required)  
   فایل صوتی برای تبدیل به متن (اجباری)
@@ -105,7 +100,6 @@ curl -X POST http://localhost:5016/api/inference/ \
 ---
 
 ### Check Model Status
-### بررسی وضعیت مدل‌ها
 
 Check if the models are loaded correctly:
 برای بررسی اینکه آیا مدل‌ها به درستی بارگذاری شده‌اند:
@@ -117,10 +111,8 @@ curl -X GET http://localhost:5016/debug/models
 ---
 
 ### Response Format
-### قالب پاسخ
 
 The API returns a JSON response with transcribed segments:
-API پاسخی در قالب JSON با بخش‌های ترنویسی شده برمی‌گرداند:
 
 ```json
 {
