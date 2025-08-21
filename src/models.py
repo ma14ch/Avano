@@ -23,8 +23,8 @@ def load_whisper_model():
     
     logger.info("Loading Whisper model...")
     try:
-        whisper_processor = AutoProcessor.from_pretrained("openai/whisper-large-v3-turbo")
-        whisper_model = AutoModelForSpeechSeq2Seq.from_pretrained("openai/whisper-large-v3-turbo")
+        whisper_processor = AutoProcessor.from_pretrained("vhdm/whisper-large-fa-v1")
+        whisper_model = AutoModelForSpeechSeq2Seq.from_pretrained("vhdm/whisper-large-fa-v1")
         
         # Set device to CUDA if available
         device = "cuda" if torch.cuda.is_available() else "cpu"

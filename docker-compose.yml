@@ -1,24 +1,21 @@
-version: '3'
+version: '3.8'
 
 services:
   ai-tts:
     build: .
     container_name: ai-ASR
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    gpus: all
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     ports:
       - "5016:5016"
     volumes:
       - ./src:/app/src
       - ./models:/app/models
     networks:
-      - ai-default
+      - localnet
 
 networks:
-  ai-default:
-    external: true
+  localnet:
+    driver: bridge
