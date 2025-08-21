@@ -4,7 +4,9 @@
 
 ## <div dir="rtl">آوانو یک سرویس قدرتمند تبدیل صوت به متن فارسی است که برای پیاده‌سازی متن گفتارِ چند سخنران در یک جلسه صوتی طراحی شده است.</div>
 
-<img width="1536" height="1024" alt="Avano Demo Image" src="https://github.com/user-attachments/assets/f0b04dc5-42b7-47af-a895-504fc0c35062" />
+
+<img width="1536" height="1024" alt="Avano" src="https://github.com/user-attachments/assets/d81e4109-0932-491b-b9f4-7d87ab14ac2e" />
+
 
 ## Model Information
 
