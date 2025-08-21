@@ -3,7 +3,7 @@
 Avano is a powerful Persian speech-to-text service designed for multi-speaker transcription in a single audio session.  
 آوانو یک سرویس قدرتمند تبدیل گفتار به متن فارسی است که برای پیاده‌سازی ترنویسی چند کاربر در یک جلسه صوتی طراحی شده است.
 
-![ChatGPT Image May 16, 2025, 05_55_07 PM](https://github.com/user-attachments/assets/bba046c7-12fe-45ad-9244-741632a07b1a)
+<img width="1536" height="1024" alt="ChatGPT Image Aug 22, 2025, 01_44_47 AM" src="https://github.com/user-attachments/assets/f0b04dc5-42b7-47af-a895-504fc0c35062" />
 
 ## Model Information
 
