@@ -92,17 +92,14 @@ curl -X POST http://localhost:5016/api/inference/ \
 #### Parameters
 
 * `audio_file`: The audio file to transcribe (required)  
-  فایل صوتی برای تبدیل به متن (اجباری)
 
 * `num_speakers`: Number of speakers to identify (optional)  
-  تعداد گویندگان برای تشخیص (اختیاری)
 
 ---
 
 ### Check Model Status
 
 Check if the models are loaded correctly:
-برای بررسی اینکه آیا مدل‌ها به درستی بارگذاری شده‌اند:
 
 ```bash
 curl -X GET http://localhost:5016/debug/models
