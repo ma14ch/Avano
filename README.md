@@ -28,7 +28,7 @@ Avano uses the state-of-the-art [vhdm/whisper-large-fa-v1](https://huggingface.c
 ### Option 1: Using Docker (Recommended)
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/avano.git
+git clone https://github.com/ma14ch/avano.git
 cd avano
 ```
 
@@ -42,7 +42,7 @@ The service will be available at `http://localhost:5016`.
 ### Option 2: Manual Installation
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/avano.git
+git clone https://github.com/ma14ch/avano.git
 cd avano
 ```
 
