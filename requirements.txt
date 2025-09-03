@@ -6,3 +6,6 @@ transformers>=4.30.0
 pyannote.audio>=2.1.1
 pydub>=0.25.1
 python-dotenv>=1.0.0
+# Gradio UI
+gradio>=4.36.1
+pandas>=2.0.0

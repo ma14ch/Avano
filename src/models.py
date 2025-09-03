@@ -23,8 +23,17 @@ def load_whisper_model():
     
     logger.info("Loading Whisper model...")
     try:
-        whisper_processor = AutoProcessor.from_pretrained("vhdm/whisper-large-fa-v1")
-        whisper_model = AutoModelForSpeechSeq2Seq.from_pretrained("vhdm/whisper-large-fa-v1")
+        # Use shared cache directory (set by Docker ENV)
+        cache_dir = os.getenv("TRANSFORMERS_CACHE") or os.path.join(os.getenv("HF_HOME", "/app/hf-cache"), "transformers")
+
+        whisper_processor = AutoProcessor.from_pretrained(
+            "vhdm/whisper-large-fa-v1",
+            cache_dir=cache_dir,
+        )
+        whisper_model = AutoModelForSpeechSeq2Seq.from_pretrained(
+            "vhdm/whisper-large-fa-v1",
+            cache_dir=cache_dir,
+        )
         
         # Set device to CUDA if available
         device = "cuda" if torch.cuda.is_available() else "cpu"

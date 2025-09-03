@@ -2,3 +2,5 @@
 src/__pycache__/models.cpython-311.pyc
 src/__pycache__/api.cpython-311.pyc
 src/__pycache__/
+hf-cache/
+__pycache__

@@ -2,7 +2,10 @@ version: '3.8'
 
 services:
   ai-tts:
-    build: .
+    build:
+      context: .
+      args:
+        PRELOAD_MODELS: "false"
     container_name: ai-ASR
     gpus: all
     environment:
@@ -13,6 +16,28 @@ services:
     volumes:
       - ./src:/app/src
       - ./models:/app/models
+      - ./hf-cache:/app/hf-cache   # persist HF/transformers cache
+    networks:
+      - localnet
+
+  ui:
+    build:
+      context: .
+      args:
+        PRELOAD_MODELS: "false"
+    container_name: ai-ASR-ui
+    gpus: all
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    command: python3 -m ui.gradio_app
+    ports:
+      - "7860:7860"
+    volumes:
+      - ./src:/app/src
+      - ./models:/app/models
+      - ./ui:/app/ui
+      - ./hf-cache:/app/hf-cache   # share the same cache with API
     networks:
       - localnet
 
