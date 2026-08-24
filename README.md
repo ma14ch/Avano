@@ -10,10 +10,10 @@
 
 ## Model Information
 
-Avano uses the state-of-the-art [vhdm/whisper-large-fa-v1](https://huggingface.co/vhdm/whisper-large-fa-v1) model, which is specifically fine-tuned for Persian speech recognition. The model achieves a Word Error Rate (WER) of 14.07% on clean Persian speech data.
+Avano uses [OpenAI Whisper Large v3](https://huggingface.co/openai/whisper-large-v3) for speech recognition, configured to transcribe Persian audio.
 
 ### Key Features of the Model
-- 🎯 Fine-tuned on high-quality Persian speech data
+- 🎯 Multilingual speech recognition with Persian transcription support
 - 🚀 Based on OpenAI's Whisper Large V3 Turbo architecture
 - 📊 14.07% Word Error Rate (WER)
 - 💪 Optimized for Persian voice transcription
@@ -140,6 +140,4 @@ The API returns a JSON response with transcribed segments:
 
 ## License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-
 

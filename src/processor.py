@@ -32,12 +32,21 @@ def convert_voice_to_text(audio_data: bytes) -> str:
         
         inputs = processor(
             audio_input, sampling_rate=sample_rate, return_tensors="pt")
-        input_features = inputs["input_features"].to(device)
+        # Whisper Large v3 uses FP16 weights on CUDA; its audio features must
+        # use the same dtype as the convolution biases.
+        input_features = inputs["input_features"].to(
+            device=device,
+            dtype=model.dtype,
+        )
         
         logger.debug("Running Whisper inference")
         with torch.no_grad():
             generated_ids = model.generate(
-                input_features, num_beams=1, language="persian")
+                input_features,
+                num_beams=1,
+                language="persian",
+                task="transcribe",
+            )
         transcription = processor.batch_decode(
             generated_ids, skip_special_tokens=True)[0]
         logger.info(f"Transcription completed, length: {len(transcription)} characters")
