@@ -12,6 +12,7 @@ RUN apt install python3.10 python3-pip -y
 
 # Set environment variable to indicate we're in Docker
 ENV RUNNING_IN_DOCKER=1
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
@@ -43,7 +44,7 @@ RUN mkdir -p $TRANSFORMERS_CACHE
 # Optionally pre-download models at build time: --build-arg PRELOAD_MODELS=true
 ARG PRELOAD_MODELS=false
 RUN if [ "$PRELOAD_MODELS" = "true" ]; then \
-  python3 -c "from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor; m='vhdm/whisper-large-fa-v1'; AutoProcessor.from_pretrained(m, cache_dir='$TRANSFORMERS_CACHE'); AutoModelForSpeechSeq2Seq.from_pretrained(m, cache_dir='$TRANSFORMERS_CACHE'); print('Preloaded:', m)"; \
+  python3 -c "import torch; from huggingface_hub import snapshot_download; from transformers import AutoModelForSpeechSeq2Seq, WhisperFeatureExtractor, WhisperProcessor, WhisperTokenizerFast; m='openai/whisper-large-v3'; d=torch.float16 if torch.cuda.is_available() else torch.float32; p=snapshot_download(m, cache_dir='$TRANSFORMERS_CACHE', allow_patterns=['*.json', '*.txt', 'model.safetensors']); WhisperProcessor(WhisperFeatureExtractor.from_pretrained(p, local_files_only=True), WhisperTokenizerFast.from_pretrained(p, local_files_only=True)); AutoModelForSpeechSeq2Seq.from_pretrained(p, local_files_only=True, dtype=d, low_cpu_mem_usage=True, use_safetensors=True); print('Preloaded:', m)"; \
 fi
 
 # Expose API and UI ports

@@ -79,4 +79,4 @@ def build_ui() -> gr.Blocks:
 if __name__ == "__main__":
 	demo = build_ui()
 	demo.queue(max_size=8)  # removed concurrency_count for Gradio 4.x
-	demo.launch(server_name="0.0.0.0", server_port=int(os.getenv("PORT", "7860")), show_error=True)
+	demo.launch(server_name="0.0.0.0", server_port=int(os.getenv("PORT", "7860")), show_error=True,share=True)

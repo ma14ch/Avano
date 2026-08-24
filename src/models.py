@@ -3,7 +3,43 @@ import torch
 import logging
 from pathlib import Path
 from pyannote.audio import Pipeline
-from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
+from huggingface_hub import snapshot_download
+from pyannote.audio.core.task import Problem, Resolution, Specifications
+from transformers import (
+    AutoModelForSpeechSeq2Seq,
+    WhisperFeatureExtractor,
+    WhisperProcessor,
+    WhisperTokenizerFast,
+)
+
+WHISPER_MODEL_ID = "openai/whisper-large-v3"
+WHISPER_MODEL_FILES = (
+    "added_tokens.json",
+    "config.json",
+    "generation_config.json",
+    "merges.txt",
+    "model.safetensors",
+    "normalizer.json",
+    "preprocessor_config.json",
+    "special_tokens_map.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "vocab.json",
+)
+
+# PyTorch 2.6+ loads checkpoints in weights-only mode by default. The bundled
+# diarization checkpoints are trusted project assets and serialize TorchVersion.
+try:
+    torch.serialization.add_safe_globals(
+        [
+            torch.torch_version.TorchVersion,
+            Problem,
+            Resolution,
+            Specifications,
+        ]
+    )
+except AttributeError:
+    pass
 
 # Configure logging
 logging.basicConfig(
@@ -18,21 +54,38 @@ whisper_model = None
 diarization_pipeline = None
 
 def load_whisper_model():
-    """Load Whisper model and processor"""
+    """Load OpenAI Whisper Large v3 and its processor."""
     global whisper_processor, whisper_model
     
-    logger.info("Loading Whisper model...")
+    logger.info("Loading Whisper model: %s", WHISPER_MODEL_ID)
     try:
         # Use shared cache directory (set by Docker ENV)
         cache_dir = os.getenv("TRANSFORMERS_CACHE") or os.path.join(os.getenv("HF_HOME", "/app/hf-cache"), "transformers")
 
-        whisper_processor = AutoProcessor.from_pretrained(
-            "vhdm/whisper-large-fa-v1",
+        torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+        # Fetch only files present in the Whisper repository, then load strictly
+        # from that local snapshot. This avoids requests for optional chat files
+        # that are not part of a speech-recognition model.
+        model_path = snapshot_download(
+            WHISPER_MODEL_ID,
             cache_dir=cache_dir,
+            allow_patterns=WHISPER_MODEL_FILES,
         )
+        feature_extractor = WhisperFeatureExtractor.from_pretrained(
+            model_path,
+            local_files_only=True,
+        )
+        tokenizer = WhisperTokenizerFast.from_pretrained(
+            model_path,
+            local_files_only=True,
+        )
+        whisper_processor = WhisperProcessor(feature_extractor, tokenizer)
         whisper_model = AutoModelForSpeechSeq2Seq.from_pretrained(
-            "vhdm/whisper-large-fa-v1",
-            cache_dir=cache_dir,
+            model_path,
+            local_files_only=True,
+            dtype=torch_dtype,
+            low_cpu_mem_usage=True,
+            use_safetensors=True,
         )
         
         # Set device to CUDA if available
