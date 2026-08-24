@@ -7,5 +7,6 @@ pyannote.audio>=3.3.2,<4.0.0
 pydub>=0.25.1
 python-dotenv>=1.0.0
 # Gradio UI
-gradio
+gradio>=6.25.0
+httpx>=0.28.0
 pandas>=2.0.0
