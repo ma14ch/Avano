@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api import router
-from models import get_whisper_model, get_diarization_pipeline
+from models import get_asr_model, get_diarization_pipeline
 
 # Configure logging
 logging.basicConfig(
@@ -39,8 +39,8 @@ async def startup_event():
     logger.info("Application starting up - verifying model loading")
     try:
         # Pre-load models during startup
-        logger.info("Pre-loading Whisper model...")
-        get_whisper_model()
+        logger.info("Pre-loading ASR model...")
+        get_asr_model()
         logger.info("Pre-loading diarization pipeline...")
         get_diarization_pipeline()
         logger.info("All models loaded successfully")

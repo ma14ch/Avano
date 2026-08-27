@@ -67,13 +67,20 @@ def check_api_health() -> str:
     except httpx.HTTPError as exc:
         return f"🔴 API is unreachable at `{_API_BASE_URL}` ({exc})."
 
-    loaded = [name for name, ok in models.items() if ok and name != "device"]
+    loaded = [name for name, ok in models.items() if isinstance(ok, bool) and ok and name not in ("whisper_model", "whisper_processor")]
     device = models.get("device", "unknown")
+    model_key = models.get("asr_model_key", "unknown")
+    model_family = models.get("asr_model_family", "unknown")
     if models.get("whisper_model") and models.get("whisper_processor"):
-        return f"🟢 API online — device: **{device}**, loaded: {', '.join(loaded) or 'none yet'}."
+        return (
+            f"🟢 API online — model: **{model_key}** ({model_family}), device: **{device}**"
+            + (f", also loaded: {', '.join(loaded)}" if loaded else "")
+            + "."
+        )
     return (
-        f"🟡 API online but models are not loaded yet (device: **{device}**). "
-        "The first transcription request will trigger loading and may be slow."
+        f"🟡 API online but model '{model_key}' ({model_family}) is not loaded yet "
+        f"(device: **{device}**). The first transcription request will trigger "
+        "loading and may be slow."
     )
 
 
@@ -267,7 +274,7 @@ CUSTOM_CSS = """
 
 
 def build_ui() -> gr.Blocks:
-    with gr.Blocks(title="Persian Multi-Speaker Transcription", css=CUSTOM_CSS) as demo:
+    with gr.Blocks(title="Persian Multi-Speaker Transcription") as demo:
         gr.Markdown(
             "# 🎙️ Persian Multi-Speaker Meeting Transcription\n"
             "Record in the browser or upload a meeting recording. The audio is sent to the "
@@ -312,7 +319,6 @@ def build_ui() -> gr.Blocks:
                     lines=12,
                     interactive=False,
                     elem_id="transcript_box",
-                    show_copy_button=True,
                 )
                 segments = gr.Dataframe(
                     headers=["Speaker", "Start (s)", "End (s)", "Duration (s)", "Transcription"],
@@ -362,5 +368,6 @@ if __name__ == "__main__":
         server_port=int(os.getenv("PORT", "7860")),
         show_error=True,
         share=True,
+        css=CUSTOM_CSS,
     )
 

@@ -1,13 +1,18 @@
 #!/bin/bash
 
-# Downloads Whisper models (defined in WHISPER_MODELS, src/models.py) into the
+# Downloads ASR models (defined in ASR_MODEL_REPOS, src/models.py) into the
 # shared Hugging Face cache (./hf-cache) used by docker-compose.yml. This is
 # the same cache deploy.sh reads from when picking which model to run.
+#
+# Models can belong to different families (e.g. Whisper encoder-decoder
+# checkpoints, or Qwen3-ASR Transformers-native models) - the download itself
+# is dispatched through src/models.py's download_asr_model(), which knows how
+# to fetch the right files for each family.
 #
 # Usage:
 #   ./download.sh                # interactive menu
 #   ./download.sh <model-key>    # download one model, e.g. ./download.sh persian-v4
-#   ./download.sh all            # download every model in WHISPER_MODELS
+#   ./download.sh all            # download every model in ASR_MODEL_REPOS
 
 set -e
 
@@ -16,10 +21,11 @@ cd "$PROJECT_DIR"
 
 HF_CACHE_DIR="$PROJECT_DIR/hf-cache/transformers"
 
-# Parse the WHISPER_MODELS dict straight out of src/models.py so this script
-# never goes out of sync with the models actually supported by the app.
-parse_whisper_models() {
-    sed -n '/^WHISPER_MODELS = {/,/^}/p' "$PROJECT_DIR/src/models.py" \
+# Parse the ASR_MODEL_REPOS / ASR_MODEL_FAMILIES dicts straight out of
+# src/models.py so this script never goes out of sync with the models
+# actually supported by the app.
+parse_dict() {
+    sed -n "/^$1 = {/,/^}/p" "$PROJECT_DIR/src/models.py" \
         | grep -E '^\s*"[^"]+"\s*:\s*"[^"]+"' \
         | sed -E 's/^[[:space:]]*"([^"]+)"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1 \2/'
 }
@@ -33,49 +39,55 @@ is_model_downloaded() {
     [ -d "$snapshots_dir" ] && [ -n "$(ls -A "$snapshots_dir" 2>/dev/null)" ]
 }
 
-mapfile -t MODEL_ENTRIES < <(parse_whisper_models)
+mapfile -t MODEL_ENTRIES < <(parse_dict ASR_MODEL_REPOS)
+mapfile -t FAMILY_ENTRIES < <(parse_dict ASR_MODEL_FAMILIES)
 MODEL_KEYS=()
 MODEL_REPOS=()
 for entry in "${MODEL_ENTRIES[@]}"; do
     MODEL_KEYS+=("${entry%% *}")
     MODEL_REPOS+=("${entry#* }")
 done
+declare -A MODEL_FAMILY
+for entry in "${FAMILY_ENTRIES[@]}"; do
+    MODEL_FAMILY["${entry%% *}"]="${entry#* }"
+done
 
 if [ "${#MODEL_KEYS[@]}" -eq 0 ]; then
-    echo "Error: could not find any WHISPER_MODELS entries in src/models.py"
+    echo "Error: could not find any ASR_MODEL_REPOS entries in src/models.py"
     exit 1
 fi
 
 print_model_list() {
-    echo "Available Whisper models:"
+    echo "Available ASR models:"
     for i in "${!MODEL_KEYS[@]}"; do
+        local key="${MODEL_KEYS[$i]}"
         local status="not downloaded"
         is_model_downloaded "${MODEL_REPOS[$i]}" && status="downloaded"
-        printf "  %d) %-14s %-45s [%s]\n" "$((i+1))" "${MODEL_KEYS[$i]}" "${MODEL_REPOS[$i]}" "$status"
+        printf "  %d) %-16s %-45s family=%-10s [%s]\n" "$((i+1))" "$key" "${MODEL_REPOS[$i]}" "${MODEL_FAMILY[$key]:-whisper}" "$status"
     done
 }
 
 download_model_key() {
     local key="$1"
-    local repo=""
-    for i in "${!MODEL_KEYS[@]}"; do
-        if [ "${MODEL_KEYS[$i]}" = "$key" ]; then
-            repo="${MODEL_REPOS[$i]}"
+    local found=false
+    for k in "${MODEL_KEYS[@]}"; do
+        if [ "$k" = "$key" ]; then
+            found=true
             break
         fi
     done
-    if [ -z "$repo" ]; then
+    if [ "$found" != true ]; then
         echo "Error: unknown model key '$key'"
         print_model_list
         exit 1
     fi
-    echo "Downloading '$key' ($repo) into $HF_CACHE_DIR ..."
-    docker compose run --rm ai-tts python3 -c "from src.models import download_whisper_model; download_whisper_model('$repo')"
+    echo "Downloading '$key' into $HF_CACHE_DIR ..."
+    docker compose run --rm ai-tts python3 -c "from src.models import download_asr_model; download_asr_model('$key')"
 }
 
 download_all_models() {
-    echo "Downloading all Whisper models into $HF_CACHE_DIR ..."
-    docker compose run --rm ai-tts python3 -c "from src.models import download_all_whisper_models; download_all_whisper_models()"
+    echo "Downloading all ASR models into $HF_CACHE_DIR ..."
+    docker compose run --rm ai-tts python3 -c "from src.models import download_all_asr_models; download_all_asr_models()"
 }
 
 echo "Building image (if needed) so models can be downloaded through the container..."

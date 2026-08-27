@@ -7,11 +7,12 @@ echo "Deploying from directory: $PROJECT_DIR"
 
 HF_CACHE_DIR="$PROJECT_DIR/hf-cache/transformers"
 
-# --- Whisper model discovery -------------------------------------------------
-# Parse the WHISPER_MODELS dict straight out of src/models.py so this script
-# never goes out of sync with the models actually supported by the app.
-parse_whisper_models() {
-    sed -n '/^WHISPER_MODELS = {/,/^}/p' "$PROJECT_DIR/src/models.py" \
+# --- ASR model discovery -----------------------------------------------------
+# Parse the ASR_MODEL_REPOS / ASR_MODEL_FAMILIES dicts straight out of
+# src/models.py so this script never goes out of sync with the models
+# actually supported by the app.
+parse_dict() {
+    sed -n "/^$1 = {/,/^}/p" "$PROJECT_DIR/src/models.py" \
         | grep -E '^\s*"[^"]+"\s*:\s*"[^"]+"' \
         | sed -E 's/^[[:space:]]*"([^"]+)"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1 \2/'
 }
@@ -36,35 +37,47 @@ repo_for_key() {
     return 1
 }
 
-mapfile -t MODEL_ENTRIES < <(parse_whisper_models)
+mapfile -t MODEL_ENTRIES < <(parse_dict ASR_MODEL_REPOS)
+mapfile -t FAMILY_ENTRIES < <(parse_dict ASR_MODEL_FAMILIES)
 MODEL_KEYS=()
 MODEL_REPOS=()
 for entry in "${MODEL_ENTRIES[@]}"; do
     MODEL_KEYS+=("${entry%% *}")
     MODEL_REPOS+=("${entry#* }")
 done
+declare -A MODEL_FAMILY
+for entry in "${FAMILY_ENTRIES[@]}"; do
+    MODEL_FAMILY["${entry%% *}"]="${entry#* }"
+done
 
-# --- Select which Whisper model to run ---------------------------------------
-# One of the keys in WHISPER_MODELS (see src/models.py), e.g. v3, persian-v4,
-# persian-bf16. Override non-interactively by exporting WHISPER_MODEL before
-# running this script, e.g.:
-#   WHISPER_MODEL=v3 ./deploy.sh
+# --- Select which ASR model to run -------------------------------------------
+# One of the keys in ASR_MODEL_REPOS (see src/models.py), e.g. v3, persian-v4,
+# persian-bf16, qwen3-asr-1.7b. Override non-interactively by exporting
+# ASR_MODEL before running this script, e.g.:
+#   ASR_MODEL=qwen3-asr-1.7b ./deploy.sh
 # Otherwise, when run interactively, you'll be prompted to pick from the
 # models already downloaded into ./hf-cache (see download.sh).
-if [ -z "${WHISPER_MODEL+x}" ] && [ -t 0 ] && [ "${#MODEL_KEYS[@]}" -gt 0 ]; then
-    echo "Available Whisper models:"
+if [ -z "${ASR_MODEL+x}" ] && [ -n "${WHISPER_MODEL+x}" ]; then
+    ASR_MODEL="$WHISPER_MODEL"
+fi
+if [ -z "${ASR_MODEL+x}" ] && [ -t 0 ] && [ "${#MODEL_KEYS[@]}" -gt 0 ]; then
+    echo "Available ASR models:"
     for i in "${!MODEL_KEYS[@]}"; do
+        key="${MODEL_KEYS[$i]}"
         status="not downloaded"
         is_model_downloaded "${MODEL_REPOS[$i]}" && status="downloaded"
-        printf "  %d) %-14s %-45s [%s]\n" "$((i+1))" "${MODEL_KEYS[$i]}" "${MODEL_REPOS[$i]}" "$status"
+        printf "  %d) %-16s %-45s family=%-10s [%s]\n" "$((i+1))" "$key" "${MODEL_REPOS[$i]}" "${MODEL_FAMILY[$key]:-whisper}" "$status"
     done
     read -rp "Select a model to use [1-${#MODEL_KEYS[@]}] (default: persian-v4): " choice
     if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#MODEL_KEYS[@]}" ]; then
-        WHISPER_MODEL="${MODEL_KEYS[$((choice-1))]}"
+        ASR_MODEL="${MODEL_KEYS[$((choice-1))]}"
     fi
 fi
-export WHISPER_MODEL="${WHISPER_MODEL:-persian-v4}"
-echo "Active Whisper model: $WHISPER_MODEL"
+export ASR_MODEL="${ASR_MODEL:-persian-v4}"
+# Keep WHISPER_MODEL in sync for backward compatibility with anything still
+# reading that env var (src/models.py also accepts either).
+export WHISPER_MODEL="$ASR_MODEL"
+echo "Active ASR model: $ASR_MODEL (family: ${MODEL_FAMILY[$ASR_MODEL]:-whisper})"
 
 # Extract container names from docker-compose.yml (one per service)
 mapfile -t CONTAINER_NAMES < <(grep "container_name:" docker-compose.yml | awk '{print $2}')
@@ -91,15 +104,16 @@ fi
 echo "Building image using docker compose..."
 docker compose build
 
-SELECTED_REPO="$(repo_for_key "$WHISPER_MODEL" || true)"
+SELECTED_REPO="$(repo_for_key "$ASR_MODEL" || true)"
 if [ -n "$SELECTED_REPO" ] && is_model_downloaded "$SELECTED_REPO"; then
-    echo "Whisper model '$WHISPER_MODEL' ($SELECTED_REPO) already downloaded, skipping download."
+    echo "ASR model '$ASR_MODEL' ($SELECTED_REPO) already downloaded, skipping download."
 elif [ -n "$SELECTED_REPO" ]; then
-    echo "Downloading Whisper model '$WHISPER_MODEL' ($SELECTED_REPO) into the shared cache..."
-    docker compose run --rm ai-tts python3 -c "from src.models import download_whisper_model; download_whisper_model('$SELECTED_REPO')"
+    echo "Downloading ASR model '$ASR_MODEL' ($SELECTED_REPO) into the shared cache..."
+    docker compose run --rm ai-tts python3 -c "from src.models import download_asr_model; download_asr_model('$ASR_MODEL')"
 else
-    echo "Warning: '$WHISPER_MODEL' is not a known key in WHISPER_MODELS (src/models.py); skipping pre-download."
+    echo "Warning: '$ASR_MODEL' is not a known key in ASR_MODEL_REPOS (src/models.py); skipping pre-download."
 fi
+
 
 # Start containers using docker compose
 echo "Starting containers using docker compose..."

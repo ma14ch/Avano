@@ -8,7 +8,7 @@ import logging
 from pydub import AudioSegment, effects
 from pathlib import Path
 
-from models import get_whisper_model, get_diarization_pipeline
+from models import get_asr_model, get_diarization_pipeline
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -54,12 +54,51 @@ def preprocess_audio_segment(audio: AudioSegment) -> AudioSegment:
     return audio
 
 
+def _transcribe_with_whisper(processor, model, audio_path: str, device: str) -> str:
+    """Run inference through a Whisper encoder-decoder checkpoint."""
+    audio_input, sample_rate = librosa.load(audio_path, sr=16000)
+    logger.debug(f"Audio loaded, sample rate: {sample_rate}Hz, duration: {len(audio_input)/sample_rate:.2f}s")
+
+    inputs = processor(
+        audio_input, sampling_rate=sample_rate, return_tensors="pt")
+    # Whisper Large v3 uses FP16 weights on CUDA; its audio features must
+    # use the same dtype as the convolution biases.
+    input_features = inputs["input_features"].to(
+        device=device,
+        dtype=model.dtype,
+    )
+
+    logger.debug("Running Whisper inference")
+    with torch.no_grad():
+        generated_ids = model.generate(
+            input_features,
+            num_beams=1,
+            language="persian",
+            task="transcribe",
+        )
+    return processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+
+
+def _transcribe_with_qwen3_asr(processor, model, audio_path: str, device: str) -> str:
+    """Run inference through a Qwen3-ASR Transformers-native chat/audio model."""
+    logger.debug("Running Qwen3-ASR inference")
+    inputs = processor.apply_transcription_request(
+        audio=audio_path, language="Persian"
+    ).to(device, model.dtype)
+
+    with torch.no_grad():
+        output_ids = model.generate(**inputs, max_new_tokens=256)
+    generated_ids = output_ids[:, inputs["input_ids"].shape[1]:]
+    return processor.decode(generated_ids, return_format="transcription_only")[0]
+
+
 def convert_voice_to_text(audio_data: bytes) -> str:
     """
-    Converts raw audio bytes to text using the Whisper model.
+    Converts raw audio bytes to text using the active ASR model (Whisper or
+    Qwen3-ASR, selected via ASR_MODEL_FAMILY in models.py).
     """
     logger.info("Converting voice to text")
-    processor, model = get_whisper_model()
+    processor, model, family = get_asr_model()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
     with tempfile.NamedTemporaryFile(delete=False, suffix=".input") as temp_audio_file:
@@ -68,36 +107,18 @@ def convert_voice_to_text(audio_data: bytes) -> str:
 
     try:
         # Load, preprocess (noise/level cleanup) and re-export the audio so
-        # that both quiet and loud recordings reach Whisper at a consistent,
-        # cleaned-up level.
+        # that both quiet and loud recordings reach the model at a
+        # consistent, cleaned-up level.
         logger.debug(f"Loading audio file from {audio_path}")
         raw_audio = AudioSegment.from_file(audio_path)
         processed_audio = preprocess_audio_segment(raw_audio)
         processed_audio = processed_audio.set_frame_rate(16000).set_channels(1)
         processed_audio.export(audio_path, format="wav")
 
-        audio_input, sample_rate = librosa.load(audio_path, sr=16000)
-        logger.debug(f"Audio loaded, sample rate: {sample_rate}Hz, duration: {len(audio_input)/sample_rate:.2f}s")
-        
-        inputs = processor(
-            audio_input, sampling_rate=sample_rate, return_tensors="pt")
-        # Whisper Large v3 uses FP16 weights on CUDA; its audio features must
-        # use the same dtype as the convolution biases.
-        input_features = inputs["input_features"].to(
-            device=device,
-            dtype=model.dtype,
-        )
-        
-        logger.debug("Running Whisper inference")
-        with torch.no_grad():
-            generated_ids = model.generate(
-                input_features,
-                num_beams=1,
-                language="persian",
-                task="transcribe",
-            )
-        transcription = processor.batch_decode(
-            generated_ids, skip_special_tokens=True)[0]
+        if family == "qwen3_asr":
+            transcription = _transcribe_with_qwen3_asr(processor, model, audio_path, device)
+        else:
+            transcription = _transcribe_with_whisper(processor, model, audio_path, device)
         logger.info(f"Transcription completed, length: {len(transcription)} characters")
     except Exception as e:
         logger.error(f"Error during transcription: {str(e)}", exc_info=True)

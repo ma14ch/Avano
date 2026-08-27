@@ -11,7 +11,7 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-      - WHISPER_MODEL=${WHISPER_MODEL:-persian-v4}
+      - ASR_MODEL=${ASR_MODEL:-persian-v4}
     ports:
       - "5016:5016"
     volumes:

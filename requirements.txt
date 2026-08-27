@@ -2,7 +2,9 @@ fastapi>=0.95.0
 uvicorn>=0.22.0
 python-multipart>=0.0.6
 librosa>=0.10.0
-transformers>=4.30.0
+# transformers>=5.13.0 is required for the Qwen3-ASR model family
+# (AutoModelForMultimodalLM). This also satisfies the Whisper code path.
+transformers>=5.13.0
 pyannote.audio>=3.3.2,<4.0.0
 pydub>=0.25.1
 python-dotenv>=1.0.0
