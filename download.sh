@@ -1,69 +1,109 @@
 #!/bin/bash
 
-# Download script for Whisper Large V3 Turbo model
-# This script downloads the model locally to avoid downloading it every time
+# Downloads Whisper models (defined in WHISPER_MODELS, src/models.py) into the
+# shared Hugging Face cache (./hf-cache) used by docker-compose.yml. This is
+# the same cache deploy.sh reads from when picking which model to run.
+#
+# Usage:
+#   ./download.sh                # interactive menu
+#   ./download.sh <model-key>    # download one model, e.g. ./download.sh persian-v4
+#   ./download.sh all            # download every model in WHISPER_MODELS
 
-set -e  # Exit on any error
+set -e
 
 PROJECT_DIR="$(dirname "$(readlink -f "$0")")"
-MODELS_DIR="$PROJECT_DIR/localmodels"
-WHISPER_MODEL_DIR="$MODELS_DIR/whisper-large-v3-turbo"
+cd "$PROJECT_DIR"
 
-echo "Starting Whisper model download..."
-echo "Project directory: $PROJECT_DIR"
-echo "Models directory: $MODELS_DIR"
+HF_CACHE_DIR="$PROJECT_DIR/hf-cache/transformers"
 
-# Create models directory if it doesn't exist
-mkdir -p "$MODELS_DIR"
+# Parse the WHISPER_MODELS dict straight out of src/models.py so this script
+# never goes out of sync with the models actually supported by the app.
+parse_whisper_models() {
+    sed -n '/^WHISPER_MODELS = {/,/^}/p' "$PROJECT_DIR/src/models.py" \
+        | grep -E '^\s*"[^"]+"\s*:\s*"[^"]+"' \
+        | sed -E 's/^[[:space:]]*"([^"]+)"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1 \2/'
+}
 
-# Change to models directory
-cd "$MODELS_DIR"
+model_cache_dir_name() {
+    echo "models--${1//\//--}"
+}
 
-# Check if git-lfs is installed
-if ! command -v git-lfs &> /dev/null; then
-    echo "Error: git-lfs is not installed. Please install it first:"
-    echo "https://git-lfs.com"
+is_model_downloaded() {
+    local snapshots_dir="$HF_CACHE_DIR/$(model_cache_dir_name "$1")/snapshots"
+    [ -d "$snapshots_dir" ] && [ -n "$(ls -A "$snapshots_dir" 2>/dev/null)" ]
+}
+
+mapfile -t MODEL_ENTRIES < <(parse_whisper_models)
+MODEL_KEYS=()
+MODEL_REPOS=()
+for entry in "${MODEL_ENTRIES[@]}"; do
+    MODEL_KEYS+=("${entry%% *}")
+    MODEL_REPOS+=("${entry#* }")
+done
+
+if [ "${#MODEL_KEYS[@]}" -eq 0 ]; then
+    echo "Error: could not find any WHISPER_MODELS entries in src/models.py"
     exit 1
 fi
 
-# Initialize git-lfs
-echo "Initializing git-lfs..."
-git lfs install
+print_model_list() {
+    echo "Available Whisper models:"
+    for i in "${!MODEL_KEYS[@]}"; do
+        local status="not downloaded"
+        is_model_downloaded "${MODEL_REPOS[$i]}" && status="downloaded"
+        printf "  %d) %-14s %-45s [%s]\n" "$((i+1))" "${MODEL_KEYS[$i]}" "${MODEL_REPOS[$i]}" "$status"
+    done
+}
 
-# Check if model directory already exists
-if [ -d "$WHISPER_MODEL_DIR" ]; then
-    echo "Whisper model directory already exists at: $WHISPER_MODEL_DIR"
-    read -p "Do you want to re-download? (y/N): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo "Removing existing model directory..."
-        rm -rf "$WHISPER_MODEL_DIR"
-    else
-        echo "Skipping download. Using existing model."
-        exit 0
+download_model_key() {
+    local key="$1"
+    local repo=""
+    for i in "${!MODEL_KEYS[@]}"; do
+        if [ "${MODEL_KEYS[$i]}" = "$key" ]; then
+            repo="${MODEL_REPOS[$i]}"
+            break
+        fi
+    done
+    if [ -z "$repo" ]; then
+        echo "Error: unknown model key '$key'"
+        print_model_list
+        exit 1
     fi
-fi
+    echo "Downloading '$key' ($repo) into $HF_CACHE_DIR ..."
+    docker compose run --rm ai-tts python3 -c "from src.models import download_whisper_model; download_whisper_model('$repo')"
+}
 
-# Clone the Whisper model repository
-echo "Downloading Whisper Large V3 Turbo model..."
-echo "This may take several minutes depending on your internet connection..."
+download_all_models() {
+    echo "Downloading all Whisper models into $HF_CACHE_DIR ..."
+    docker compose run --rm ai-tts python3 -c "from src.models import download_all_whisper_models; download_all_whisper_models()"
+}
 
-git clone https://huggingface.co/openai/whisper-large-v3-turbo
+echo "Building image (if needed) so models can be downloaded through the container..."
+docker compose build ai-tts
 
-# Verify the download
-if [ -d "$WHISPER_MODEL_DIR" ]; then
-    echo "✅ Whisper model downloaded successfully to: $WHISPER_MODEL_DIR"
-    
-    # Show directory size
-    du -sh "$WHISPER_MODEL_DIR" 2>/dev/null || echo "Model directory created"
-    
-    # List key files
-    echo "Key model files:"
-    ls -la "$WHISPER_MODEL_DIR"/ | grep -E '\.(json|bin|safetensors|txt)$' || true
-else
-    echo "❌ Error: Failed to download Whisper model"
-    exit 1
-fi
+case "${1:-}" in
+    "")
+        print_model_list
+        echo
+        read -rp "Select a model to download [1-${#MODEL_KEYS[@]}] or 'a' for all: " choice
+        if [[ "$choice" =~ ^[Aa]$ ]]; then
+            download_all_models
+        elif [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#MODEL_KEYS[@]}" ]; then
+            download_model_key "${MODEL_KEYS[$((choice-1))]}"
+        else
+            echo "Invalid selection."
+            exit 1
+        fi
+        ;;
+    all)
+        download_all_models
+        ;;
+    *)
+        download_model_key "$1"
+        ;;
+esac
 
-echo "Download completed successfully!"
-echo "The model will now be loaded locally from: $WHISPER_MODEL_DIR"
+echo
+echo "Done. Current cache status:"
+print_model_list
+

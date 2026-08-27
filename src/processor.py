@@ -2,15 +2,57 @@ import os
 import tempfile
 import uuid
 import librosa
+import numpy as np
 import torch
 import logging
-from pydub import AudioSegment
+from pydub import AudioSegment, effects
 from pathlib import Path
 
 from models import get_whisper_model, get_diarization_pipeline
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# Target loudness (dBFS) that quiet/loud segments are normalized towards.
+TARGET_DBFS = -20.0
+
+
+def preprocess_audio_segment(audio: AudioSegment) -> AudioSegment:
+    """
+    Cleans up a speech segment before it is fed to Whisper.
+
+    Meeting recordings often mix very quiet and very loud speakers/segments,
+    which hurts transcription quality. This applies:
+      - a high-pass filter to remove low-frequency rumble/hum,
+      - dynamic range compression (a light AGC) so loud and quiet parts of
+        the *same* segment are brought closer together,
+      - peak normalization so segments are neither clipped nor too quiet,
+      - loudness normalization to a consistent target level across segments.
+    """
+    try:
+        # Remove low-frequency noise (AC hum, mic rumble) below typical
+        # speech fundamentals.
+        audio = effects.high_pass_filter(audio, cutoff=80)
+
+        # Compress the dynamic range so quiet words aren't lost and loud
+        # words don't dominate within the same segment.
+        audio = effects.compress_dynamic_range(
+            audio, threshold=-20.0, ratio=4.0, attack=5.0, release=50.0
+        )
+
+        # Normalize peak level to use the full available headroom without
+        # clipping.
+        audio = effects.normalize(audio, headroom=1.0)
+
+        # Bring the overall loudness to a consistent target so segments
+        # recorded at very different volumes are comparable.
+        gain_needed = TARGET_DBFS - audio.dBFS
+        if np.isfinite(gain_needed):
+            audio = audio.apply_gain(gain_needed)
+    except Exception as e:
+        logger.warning(f"Audio preprocessing failed, using original audio: {e}")
+    return audio
+
 
 def convert_voice_to_text(audio_data: bytes) -> str:
     """
@@ -20,13 +62,20 @@ def convert_voice_to_text(audio_data: bytes) -> str:
     processor, model = get_whisper_model()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_audio_file:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".input") as temp_audio_file:
         temp_audio_file.write(audio_data)
         audio_path = temp_audio_file.name
 
     try:
-        # Load the audio file (forcing a 16kHz sample rate)
+        # Load, preprocess (noise/level cleanup) and re-export the audio so
+        # that both quiet and loud recordings reach Whisper at a consistent,
+        # cleaned-up level.
         logger.debug(f"Loading audio file from {audio_path}")
+        raw_audio = AudioSegment.from_file(audio_path)
+        processed_audio = preprocess_audio_segment(raw_audio)
+        processed_audio = processed_audio.set_frame_rate(16000).set_channels(1)
+        processed_audio.export(audio_path, format="wav")
+
         audio_input, sample_rate = librosa.load(audio_path, sr=16000)
         logger.debug(f"Audio loaded, sample rate: {sample_rate}Hz, duration: {len(audio_input)/sample_rate:.2f}s")
         
