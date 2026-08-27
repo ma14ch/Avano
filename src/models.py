@@ -12,13 +12,24 @@ from transformers import (
     WhisperTokenizerFast,
 )
 
-WHISPER_MODEL_ID = "openai/whisper-large-v3"
+# Available Whisper models. Select the active one with the WHISPER_MODEL env var
+# (one of the keys below). Both can be pre-downloaded locally so switching
+# between them does not require a new download.
+WHISPER_MODELS = {
+    "v3": "openai/whisper-large-v3",
+    "persian-v4": "nezamisafa/whisper-persian-v4",
+    "persian-bf16": "AmirMohseni/whisper-large-v3-persian-bf16",
+}
+WHISPER_MODEL_KEY = os.getenv("WHISPER_MODEL", "persian-v4")
+WHISPER_MODEL_ID = WHISPER_MODELS.get(WHISPER_MODEL_KEY, WHISPER_MODELS["persian-v4"])
 WHISPER_MODEL_FILES = (
     "added_tokens.json",
     "config.json",
     "generation_config.json",
     "merges.txt",
     "model.safetensors",
+    "model-*-of-*.safetensors",
+    "model.safetensors.index.json",
     "normalizer.json",
     "preprocessor_config.json",
     "special_tokens_map.json",
@@ -53,11 +64,29 @@ whisper_processor = None
 whisper_model = None
 diarization_pipeline = None
 
+def download_whisper_model(model_id: str) -> str:
+    """Download (or reuse cached) snapshot for a given Whisper model id."""
+    cache_dir = os.getenv("TRANSFORMERS_CACHE") or os.path.join(os.getenv("HF_HOME", "/app/hf-cache"), "transformers")
+    logger.info("Downloading Whisper model: %s", model_id)
+    return snapshot_download(
+        model_id,
+        cache_dir=cache_dir,
+        allow_patterns=WHISPER_MODEL_FILES,
+    )
+
+
+def download_all_whisper_models() -> None:
+    """Pre-download every model in WHISPER_MODELS so switching is instant."""
+    for key, model_id in WHISPER_MODELS.items():
+        logger.info("Pre-downloading model '%s' (%s)", key, model_id)
+        download_whisper_model(model_id)
+
+
 def load_whisper_model():
-    """Load OpenAI Whisper Large v3 and its processor."""
+    """Load the Whisper model selected via WHISPER_MODEL and its processor."""
     global whisper_processor, whisper_model
     
-    logger.info("Loading Whisper model: %s", WHISPER_MODEL_ID)
+    logger.info("Loading Whisper model: %s (WHISPER_MODEL=%s)", WHISPER_MODEL_ID, WHISPER_MODEL_KEY)
     try:
         # Use shared cache directory (set by Docker ENV)
         cache_dir = os.getenv("TRANSFORMERS_CACHE") or os.path.join(os.getenv("HF_HOME", "/app/hf-cache"), "transformers")
