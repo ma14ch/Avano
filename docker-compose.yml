@@ -34,7 +34,7 @@ services:
       - CUDA_VISIBLE_DEVICES=1
       - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
       - ASR_API_URL=http://ai-tts:5016/api/inference/
-      - ASR_API_TIMEOUT=600
+      - ASR_API_TIMEOUT=3600
     command: python3 -m ui.gradio_app
     ports:
       - "7860:7860"

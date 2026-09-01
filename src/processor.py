@@ -187,13 +187,25 @@ def process_voice_file(audio_file_path: str, num_speakers: int = None) -> dict:
      - Splits the audio and transcribes each segment.
     Returns a dictionary suitable for JSON output.
     """
+    results = {"segments": list(process_voice_file_stream(audio_file_path, num_speakers=num_speakers))}
+    return results
+
+
+def process_voice_file_stream(audio_file_path: str, num_speakers: int = None):
+    """
+    Generator variant of `process_voice_file` that yields one segment dict
+    at a time, as soon as it is transcribed.
+
+    This lets large/long recordings (many diarized segments) be streamed
+    back to a client incrementally instead of making it wait for the whole
+    file to finish before seeing any result.
+    """
     speaker_segments = diarize_audio(audio_file_path)
     if num_speakers:
         speaker_segments = filter_speakers(speaker_segments, num_speakers)
     segmented_audios = segment_audio_by_speaker(
         audio_file_path, speaker_segments)
 
-    results = {"segments": []}
     for speaker, start, end, segment_path in segmented_audios:
         try:
             with open(segment_path, "rb") as f:
@@ -204,11 +216,9 @@ def process_voice_file(audio_file_path: str, num_speakers: int = None) -> dict:
         finally:
             if os.path.exists(segment_path):
                 os.remove(segment_path)
-        results["segments"].append({
+        yield {
             "speaker": speaker,
             "start": start,
             "end": end,
             "transcription": transcription
-        })
-
-    return results
+        }

@@ -134,4 +134,27 @@ if [ "$ALL_RUNNING" != true ]; then
     exit 1
 fi
 
+# --- Wait for the Gradio public share link -----------------------------------
+# ui/gradio_app.py launches with share=True, which prints a
+# "Running on public URL: https://xxxx.gradio.live" line once the tunnel is
+# established. Poll the container logs for it so operators don't have to dig
+# through `docker logs` themselves.
+UI_CONTAINER_NAME="ai-ASR-ui"
+if [ "$(docker ps -q -f name="^${UI_CONTAINER_NAME}\$")" ]; then
+    echo "Waiting for the Gradio public link..."
+    GRADIO_PUBLIC_URL=""
+    for _ in $(seq 1 60); do
+        GRADIO_PUBLIC_URL="$(docker logs "$UI_CONTAINER_NAME" 2>&1 | grep -oE 'https://[a-zA-Z0-9.-]+\.gradio\.live' | tail -n1)"
+        if [ -n "$GRADIO_PUBLIC_URL" ]; then
+            break
+        fi
+        sleep 2
+    done
+    if [ -n "$GRADIO_PUBLIC_URL" ]; then
+        echo "Gradio public URL: $GRADIO_PUBLIC_URL"
+    else
+        echo "Warning: Gradio public URL was not found in the '$UI_CONTAINER_NAME' logs yet. Check with: docker logs $UI_CONTAINER_NAME"
+    fi
+fi
+
 echo "Deployment completed successfully."

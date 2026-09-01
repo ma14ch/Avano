@@ -1,11 +1,13 @@
 import os
+import json
 import tempfile
 import logging
 from typing import Optional
 from fastapi import APIRouter, File, Form, UploadFile, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from processor import process_voice_file
+from processor import process_voice_file, process_voice_file_stream
 from models import check_models_loaded
 
 # Configure logging
@@ -51,6 +53,49 @@ async def api_inference(
         # Clean up the temporary file
         if os.path.exists(temp_path):
             os.remove(temp_path)
+
+
+@router.post("/api/inference/stream")
+async def api_inference_stream(
+    audio_file: UploadFile = File(...),
+    num_speakers: Optional[int] = Form(None)
+):
+    """
+    Streaming variant of /api/inference/.
+
+    Returns newline-delimited JSON (NDJSON): one `{"segment": {...}}` line per
+    diarized/transcribed segment as soon as it is ready, followed by a final
+    `{"done": true}` line, or a `{"error": "..."}` line if processing fails.
+
+    This lets clients (e.g. the Gradio UI) show partial results and a
+    progressively-growing transcript/export instead of waiting for the whole
+    (potentially long) recording to finish processing before showing anything.
+    """
+    if not audio_file.filename:
+        raise HTTPException(status_code=400, detail="No file uploaded")
+
+    logger.info(f"Processing file (stream): {audio_file.filename}")
+
+    temp_path = os.path.join(tempfile.gettempdir(), audio_file.filename)
+    with open(temp_path, "wb") as f:
+        content = await audio_file.read()
+        f.write(content)
+
+    def _generate():
+        try:
+            for segment in process_voice_file_stream(temp_path, num_speakers=num_speakers):
+                yield json.dumps({"segment": segment}, ensure_ascii=False) + "\n"
+            yield json.dumps({"done": True}) + "\n"
+        except Exception as e:
+            logger.error(f"Error processing file (stream): {str(e)}", exc_info=True)
+            yield json.dumps({"error": str(e)}) + "\n"
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+    return StreamingResponse(_generate(), media_type="application/x-ndjson")
+
+
 
 @router.get("/")
 async def index():

@@ -28,16 +28,26 @@ from typing import Any
 
 import gradio as gr
 import httpx
+from pydub import AudioSegment
 
 API_URL = os.getenv("ASR_API_URL", "http://ai-tts:5016/api/inference/")
-REQUEST_TIMEOUT_SECONDS = float(os.getenv("ASR_API_TIMEOUT", "600"))
+# Large meeting recordings can take a long time to diarize + transcribe
+# segment-by-segment, so the default read timeout is generous (1 hour).
+# Override with ASR_API_TIMEOUT (seconds) if needed.
+REQUEST_TIMEOUT_SECONDS = float(os.getenv("ASR_API_TIMEOUT", "3600"))
 HEALTH_TIMEOUT_SECONDS = float(os.getenv("ASR_HEALTH_TIMEOUT", "5"))
 
 # Derive the API's base URL (e.g. "http://ai-tts:5016") from ASR_API_URL so we
-# can also hit the root "/" and "/debug/models" endpoints for health checks.
+# can also hit the root "/" and "/debug/models" endpoints for health checks,
+# and the streaming inference endpoint.
 _API_BASE_URL = API_URL.split("/api/")[0].rstrip("/")
 _MODELS_STATUS_URL = f"{_API_BASE_URL}/debug/models"
 _ROOT_URL = f"{_API_BASE_URL}/"
+STREAM_API_URL = API_URL.rstrip("/") + "/stream"
+# Streaming requests may sit idle between segments while the model is busy on
+# a long segment, so give the read timeout the same generous budget as normal
+# requests; only the connection itself needs a short timeout.
+_STREAM_TIMEOUT = httpx.Timeout(connect=10.0, read=REQUEST_TIMEOUT_SECONDS, write=60.0, pool=10.0)
 
 
 @dataclass
@@ -47,6 +57,7 @@ class TranscriptionState:
 
     segments: list[dict[str, Any]] = field(default_factory=list)
     source_filename: str = "transcript"
+    audio_path: str | None = None
 
 
 # --------------------------------------------------------------------------
@@ -93,26 +104,19 @@ def _error_message(response: httpx.Response) -> str:
     return str(detail or response.reason_phrase)
 
 
-def _format_segments(payload: dict[str, Any]) -> tuple[str, list[list[Any]], list[dict[str, Any]]]:
-    """Transform the API's ``{"segments": [...]}`` response for the UI."""
-    segments = payload.get("segments")
-    if not isinstance(segments, list):
-        raise ValueError("The API response does not contain a segments list.")
+def _clean_segment(segment: dict[str, Any]) -> dict[str, Any]:
+    """Normalize one raw API segment dict into the shape the UI uses."""
+    return {
+        "speaker": str(segment.get("speaker", "Unknown")),
+        "start": float(segment.get("start", 0.0)),
+        "end": float(segment.get("end", 0.0)),
+        "transcription": str(segment.get("transcription", "")).strip(),
+    }
 
-    clean_segments: list[dict[str, Any]] = []
-    for segment in segments:
-        if not isinstance(segment, dict):
-            continue
-        clean_segments.append(
-            {
-                "speaker": str(segment.get("speaker", "Unknown")),
-                "start": float(segment.get("start", 0.0)),
-                "end": float(segment.get("end", 0.0)),
-                "transcription": str(segment.get("transcription", "")).strip(),
-            }
-        )
-    clean_segments.sort(key=lambda seg: seg["start"])
 
+def _render_segments(clean_segments: list[dict[str, Any]]) -> tuple[str, list[list[Any]]]:
+    """Build the transcript text and Dataframe rows for a list of already
+    cleaned/sorted segments."""
     transcript_lines = [
         f"{seg['speaker']} [{seg['start']:.2f}–{seg['end']:.2f}s]: {seg['transcription']}"
         for seg in clean_segments
@@ -121,8 +125,20 @@ def _format_segments(payload: dict[str, Any]) -> tuple[str, list[list[Any]], lis
         [seg["speaker"], round(seg["start"], 2), round(seg["end"], 2), round(seg["end"] - seg["start"], 2), seg["transcription"]]
         for seg in clean_segments
     ]
-
     transcript = "\n".join(transcript_lines) or "No speech segments were detected."
+    return transcript, rows
+
+
+def _format_segments(payload: dict[str, Any]) -> tuple[str, list[list[Any]], list[dict[str, Any]]]:
+    """Transform the API's ``{"segments": [...]}`` response for the UI."""
+    segments = payload.get("segments")
+    if not isinstance(segments, list):
+        raise ValueError("The API response does not contain a segments list.")
+
+    clean_segments = [_clean_segment(segment) for segment in segments if isinstance(segment, dict)]
+    clean_segments.sort(key=lambda seg: seg["start"])
+
+    transcript, rows = _render_segments(clean_segments)
     return transcript, rows, clean_segments
 
 
@@ -191,6 +207,29 @@ def export_json(state: TranscriptionState) -> str:
     return _export(state, "json")
 
 
+def play_segment(state: TranscriptionState, evt: gr.SelectData) -> tuple[str | None, str]:
+    """Slice the source recording to the selected segment's [start, end] and
+    return it for playback, so operators can listen to what was transcribed."""
+    if not state.segments or not state.audio_path:
+        return None, "⚠️ No audio available — run a transcription first."
+
+    row_index = evt.index[0] if isinstance(evt.index, (list, tuple)) else evt.index
+    if row_index is None or not (0 <= row_index < len(state.segments)):
+        return None, "⚠️ Could not resolve the selected segment."
+
+    seg = state.segments[row_index]
+    try:
+        audio = AudioSegment.from_file(state.audio_path)
+        clip = audio[int(seg["start"] * 1000): int(seg["end"] * 1000)]
+        clip_path = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
+        clip.export(clip_path, format="wav")
+    except (OSError, ValueError) as exc:
+        return None, f"🔴 Could not extract segment audio: {exc}"
+
+    label = f"▶️ Playing {seg['speaker']} [{seg['start']:.2f}–{seg['end']:.2f}s]"
+    return clip_path, label
+
+
 # --------------------------------------------------------------------------
 # Main actions
 # --------------------------------------------------------------------------
@@ -200,10 +239,15 @@ def transcribe(
     num_speakers: int | float | None,
     progress: gr.Progress = gr.Progress(track_tqdm=False),
 ):
-    """Submit the Gradio audio file according to the FastAPI OpenAPI schema."""
+    """Submit the Gradio audio file to the streaming inference endpoint and
+    progressively yield transcript/segment updates as each diarized segment
+    comes back, instead of blocking until the whole (possibly long)
+    recording has finished processing.
+    """
     empty_state = TranscriptionState()
     if not audio_path:
-        return "", [], "⚠️ Please record or upload an audio file first.", empty_state, gr.update(interactive=False)
+        yield "", [], "⚠️ Please record or upload an audio file first.", empty_state, gr.update(interactive=False), gr.update(interactive=False), gr.update(interactive=False)
+        return
 
     form_data: dict[str, str] = {}
     speaker_count = int(num_speakers or 0)
@@ -211,6 +255,10 @@ def transcribe(
         form_data["num_speakers"] = str(speaker_count)
 
     progress(0, desc="Uploading audio and starting transcription…")
+
+    clean_segments: list[dict[str, Any]] = []
+    state = TranscriptionState(source_filename=Path(audio_path).name, audio_path=audio_path)
+
     try:
         with Path(audio_path).open("rb") as audio_file:
             files = {
@@ -220,36 +268,65 @@ def transcribe(
                     "audio/wav",
                 )
             }
-            with httpx.Client(timeout=REQUEST_TIMEOUT_SECONDS) as client:
-                response = client.post(API_URL, data=form_data, files=files)
+            with httpx.Client(timeout=_STREAM_TIMEOUT) as client:
+                with client.stream("POST", STREAM_API_URL, data=form_data, files=files) as response:
+                    if response.is_error:
+                        response.read()
+                        message = f"🔴 API error ({response.status_code}): {_error_message(response)}"
+                        yield "", [], message, empty_state, gr.update(interactive=False), gr.update(interactive=False), gr.update(interactive=False)
+                        return
+
+                    for line in response.iter_lines():
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            event = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+
+                        if "error" in event:
+                            message = f"🔴 API error while streaming: {event['error']}"
+                            yield "", [], message, empty_state, gr.update(interactive=False), gr.update(interactive=False), gr.update(interactive=False)
+                            return
+
+                        if event.get("done"):
+                            break
+
+                        raw_segment = event.get("segment")
+                        if not isinstance(raw_segment, dict):
+                            continue
+
+                        clean_segments.append(_clean_segment(raw_segment))
+                        clean_segments.sort(key=lambda seg: seg["start"])
+                        state = TranscriptionState(
+                            segments=clean_segments,
+                            source_filename=Path(audio_path).name,
+                            audio_path=audio_path,
+                        )
+                        transcript, rows = _render_segments(clean_segments)
+                        speaker_count_found = len({seg["speaker"] for seg in clean_segments})
+                        status = f"⏳ Transcribing… {len(clean_segments)} segment(s) so far. Download is available for the results received so far."
+                        yield transcript, rows, status, state, gr.update(interactive=True), gr.update(interactive=True), gr.update(interactive=True)
     except httpx.TimeoutException:
         message = (
             f"⏱️ Request timed out after {REQUEST_TIMEOUT_SECONDS:.0f}s. "
             "The recording may be too long, or the API is overloaded."
         )
-        return "", [], message, empty_state, gr.update(interactive=False)
+        yield "", [], message, empty_state, gr.update(interactive=False), gr.update(interactive=False), gr.update(interactive=False)
+        return
     except httpx.HTTPError as exc:
-        return "", [], f"🔴 Could not reach the API: {exc}", empty_state, gr.update(interactive=False)
+        yield "", [], f"🔴 Could not reach the API: {exc}", empty_state, gr.update(interactive=False), gr.update(interactive=False), gr.update(interactive=False)
+        return
     except OSError as exc:
-        return "", [], f"🔴 Could not read the audio file: {exc}", empty_state, gr.update(interactive=False)
+        yield "", [], f"🔴 Could not read the audio file: {exc}", empty_state, gr.update(interactive=False), gr.update(interactive=False), gr.update(interactive=False)
+        return
 
-    if response.is_error:
-        message = f"🔴 API error ({response.status_code}): {_error_message(response)}"
-        return "", [], message, empty_state, gr.update(interactive=False)
-
-    progress(1, desc="Formatting results…")
-    try:
-        transcript, rows, clean_segments = _format_segments(response.json())
-    except (ValueError, TypeError) as exc:
-        return "", [], f"🔴 Unexpected API response: {exc}", empty_state, gr.update(interactive=False)
-
-    state = TranscriptionState(
-        segments=clean_segments,
-        source_filename=Path(audio_path).name,
-    )
+    transcript, rows = _render_segments(clean_segments)
     speaker_count_found = len({seg["speaker"] for seg in clean_segments})
     status = f"✅ Done — {len(clean_segments)} segment(s), {speaker_count_found} speaker(s) detected."
-    return transcript, rows, status, state, gr.update(interactive=bool(clean_segments))
+    has_segments = bool(clean_segments)
+    yield transcript, rows, status, state, gr.update(interactive=has_segments), gr.update(interactive=has_segments), gr.update(interactive=has_segments)
 
 
 def clear_form():
@@ -261,6 +338,8 @@ def clear_form():
         "Ready. Record or upload an audio file.",
         TranscriptionState(),
         gr.update(interactive=False),
+        None,
+        "No segment selected.",
     )
 
 
@@ -328,6 +407,9 @@ def build_ui() -> gr.Blocks:
                     label="Speaker segments",
                     wrap=True,
                 )
+                gr.Markdown("### Segment playback\nClick a row above to hear that speaker's segment.")
+                segment_player_label = gr.Markdown("No segment selected.")
+                segment_player = gr.Audio(label="Segment audio", interactive=False)
 
         demo.load(fn=check_api_health, outputs=health_banner)
         refresh_health_button.click(fn=check_api_health, outputs=health_banner, queue=False)
@@ -335,19 +417,14 @@ def build_ui() -> gr.Blocks:
         transcribe_button.click(
             fn=transcribe,
             inputs=[audio, num_speakers],
-            outputs=[transcript, segments, status, transcript_state, export_txt_button],
+            outputs=[transcript, segments, status, transcript_state, export_txt_button, export_srt_button, export_json_button],
             concurrency_limit=1,
             trigger_mode="once",
-        ).then(
-            fn=lambda state: (gr.update(interactive=bool(state.segments)), gr.update(interactive=bool(state.segments))),
-            inputs=transcript_state,
-            outputs=[export_srt_button, export_json_button],
-            queue=False,
         )
 
         clear_button.click(
             fn=clear_form,
-            outputs=[audio, num_speakers, transcript, segments, status, transcript_state, export_txt_button],
+            outputs=[audio, num_speakers, transcript, segments, status, transcript_state, export_txt_button, segment_player, segment_player_label],
             queue=False,
         ).then(
             fn=lambda: (gr.update(interactive=False), gr.update(interactive=False)),
@@ -358,6 +435,13 @@ def build_ui() -> gr.Blocks:
         export_txt_button.click(fn=export_txt, inputs=transcript_state, outputs=export_file, queue=False)
         export_srt_button.click(fn=export_srt, inputs=transcript_state, outputs=export_file, queue=False)
         export_json_button.click(fn=export_json, inputs=transcript_state, outputs=export_file, queue=False)
+
+        segments.select(
+            fn=play_segment,
+            inputs=transcript_state,
+            outputs=[segment_player, segment_player_label],
+            queue=False,
+        )
 
     return demo.queue(max_size=8, default_concurrency_limit=1)
 
